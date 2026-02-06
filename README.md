@@ -8,12 +8,17 @@ A beautiful, responsive web dashboard showcasing life around NYU Tandon's Brookl
 - **Attractions** - Nearby landmarks like Brooklyn Bridge, DUMBO, etc.
 - **Food & Dining** - Best restaurants around MetroTech Center
 - **Transit Info** - Real-time subway status for nearby stations (A/C/F/R lines)
+- **🤖 AI Route Planner** - Natural language route planning powered by Claude API
+  - Understands semantic queries like "I want to see the sunset"
+  - Intelligent location matching and route optimization
+  - Real-time thinking indicators and error handling
 
 ## 🛠️ Tech Stack
 
 - **Vite** - Lightning-fast build tool
 - **React** - UI library
 - **Tailwind CSS** - Utility-first CSS framework
+- **Claude API** - AI-powered natural language processing
 - **NYU Purple (#57068c)** - Brand color theming
 
 ## 📦 Installation & Setup
@@ -31,6 +36,25 @@ npm run dev
 
 The app will be available at `http://localhost:5173`
 
+## 🔑 AI Route Planner Setup (Required)
+
+To use the AI Route Planner feature, you need to configure your Anthropic API key:
+
+1. **Get API Key**: Visit [Anthropic Console](https://console.anthropic.com/settings/keys) and create a new API key
+
+2. **Configure Environment**:
+   ```bash
+   # Open .env file
+   open .env
+
+   # Replace with your actual key
+   VITE_CLAUDE_API_KEY=sk-ant-api03-your-actual-key-here
+   ```
+
+3. **Restart Server**: Stop and restart `npm run dev`
+
+📖 **Detailed Setup**: See [README-AI.md](./README-AI.md) for complete AI configuration guide
+
 ## 📁 Project Structure
 
 ```
@@ -40,11 +64,15 @@ projectB/
 │   │   ├── WeatherCard.jsx
 │   │   ├── AttractionsCard.jsx
 │   │   ├── RestaurantsCard.jsx
-│   │   └── TransitCard.jsx
+│   │   ├── TransitCard.jsx
+│   │   └── RoutePlannerCard.jsx  # AI-powered route planner
+│   ├── services/
+│   │   └── claudeService.js # Claude API integration
 │   ├── mockData.js          # Mock data for all modules
 │   ├── App.jsx              # Main app component
 │   ├── main.jsx
 │   └── index.css            # Tailwind imports
+├── .env                     # API keys (DO NOT COMMIT)
 ├── tailwind.config.js       # Tailwind configuration (with NYU colors)
 └── package.json
 ```

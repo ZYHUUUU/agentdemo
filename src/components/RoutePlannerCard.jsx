@@ -1,30 +1,13 @@
 import React, { useState } from 'react';
-import { allLocations, baseLocation, routeDistances } from '../mockData';
+import { allLocations, routeDistances } from '../mockData';
+import { planRouteWithClaude } from '../services/claudeService';
 
 const RoutePlannerCard = () => {
   const [input, setInput] = useState('');
   const [route, setRoute] = useState([]);
   const [totalTime, setTotalTime] = useState(0);
-
-  // Natural language parser - extracts locations from user input
-  const parseInput = (text) => {
-    const lowerText = text.toLowerCase();
-    const foundLocations = [];
-
-    // Check for each location's keywords in the input
-    allLocations.forEach(location => {
-      if (location.keywords) {
-        const hasMatch = location.keywords.some(keyword =>
-          lowerText.includes(keyword)
-        );
-        if (hasMatch && !foundLocations.find(l => l.id === location.id)) {
-          foundLocations.push(location);
-        }
-      }
-    });
-
-    return foundLocations;
-  };
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   // Calculate walking time between two locations
   const getWalkTime = (from, to) => {
@@ -43,37 +26,59 @@ const RoutePlannerCard = () => {
     return Math.round(Math.abs(fromDist - toDist) * 20 + 5); // rough estimate
   };
 
-  // Handle route planning
-  const handlePlanRoute = () => {
+  // Handle route planning with AI
+  const handlePlanRoute = async () => {
     if (!input.trim()) return;
 
-    const locations = parseInput(input);
+    setIsLoading(true);
+    setError(null);
 
-    if (locations.length === 0) {
-      alert('无法识别地点，请尝试提到具体的地点名称，如：咖啡、DUMBO、Brooklyn Bridge等');
-      return;
+    try {
+      // Call Claude API to plan the route
+      const locationIds = await planRouteWithClaude(input, allLocations);
+
+      if (!locationIds || locationIds.length === 0) {
+        throw new Error('AI 无法理解您的行程，请尝试更具体的描述');
+      }
+
+      // Map IDs to full location objects
+      const plannedRoute = locationIds
+        .map(id => allLocations.find(loc => loc.id === id || loc.id === String(id)))
+        .filter(Boolean); // Remove any undefined values
+
+      if (plannedRoute.length === 0) {
+        throw new Error('未找到匹配的地点，请重新描述您的行程');
+      }
+
+      // Calculate total time
+      let total = 0;
+      for (let i = 0; i < plannedRoute.length - 1; i++) {
+        total += getWalkTime(plannedRoute[i], plannedRoute[i + 1]);
+      }
+
+      setRoute(plannedRoute);
+      setTotalTime(total);
+      setError(null);
+
+    } catch (err) {
+      console.error('Route planning error:', err);
+
+      let errorMessage = '路线规划失败';
+
+      if (err.message.includes('API key')) {
+        errorMessage = '⚠️ 请先在 .env 文件中设置您的 VITE_CLAUDE_API_KEY';
+      } else if (err.message.includes('network') || err.message.includes('fetch')) {
+        errorMessage = '❌ 网络错误，请检查您的网络连接';
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      setError(errorMessage);
+      setRoute([]);
+      setTotalTime(0);
+    } finally {
+      setIsLoading(false);
     }
-
-    // Add starting point (Tandon) if not already included
-    let finalRoute = [];
-    if (!locations.some(l => l.id === 'tandon')) {
-      finalRoute.push(baseLocation);
-    }
-    finalRoute = [...finalRoute, ...locations];
-
-    // Add return to Tandon if mentioned in input
-    if (input.match(/回|return|back/i) && finalRoute[finalRoute.length - 1].id !== 'tandon') {
-      finalRoute.push(baseLocation);
-    }
-
-    // Calculate total time
-    let total = 0;
-    for (let i = 0; i < finalRoute.length - 1; i++) {
-      total += getWalkTime(finalRoute[i], finalRoute[i + 1]);
-    }
-
-    setRoute(finalRoute);
-    setTotalTime(total);
   };
 
   // Clear the current route
@@ -81,11 +86,12 @@ const RoutePlannerCard = () => {
     setInput('');
     setRoute([]);
     setTotalTime(0);
+    setError(null);
   };
 
   // Handle Enter key press
   const handleKeyPress = (e) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !isLoading) {
       handlePlanRoute();
     }
   };
@@ -93,14 +99,17 @@ const RoutePlannerCard = () => {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
       <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-white flex items-center gap-2">
-        <span>🗺️</span>
-        Route Planner
+        <span>🤖</span>
+        AI Route Planner
+        <span className="text-xs font-normal bg-gradient-to-r from-purple-500 to-blue-500 text-white px-2 py-1 rounded-full ml-2">
+          Powered by Claude
+        </span>
       </h2>
 
       <div className="mb-4">
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-          用自然语言描述你的行程，例如：<br />
-          "我想先去喝咖啡，然后去 DUMBO 逛逛，最后回 Tandon"
+          用自然语言描述你的行程，AI 会智能理解并规划路线：<br />
+          例如："我想去一个适合看夕阳的地方然后回学校" 🌅
         </p>
 
         <div className="flex gap-2">
@@ -109,16 +118,53 @@ const RoutePlannerCard = () => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="输入你的行程计划..."
-            className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-nyu-purple focus:border-transparent dark:bg-gray-700 dark:text-white"
+            disabled={isLoading}
+            placeholder="试试：我想找个地方放松一下..."
+            className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-nyu-purple focus:border-transparent dark:bg-gray-700 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <button
             onClick={handlePlanRoute}
-            className="px-6 py-3 bg-nyu-purple text-white rounded-lg hover:bg-nyu-purple-dark transition-colors font-medium"
+            disabled={isLoading || !input.trim()}
+            className="px-6 py-3 bg-nyu-purple text-white rounded-lg hover:bg-nyu-purple-dark transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 min-w-[100px] justify-center"
           >
-            规划
+            {isLoading ? (
+              <>
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                <span>思考中</span>
+              </>
+            ) : (
+              '规划'
+            )}
           </button>
         </div>
+
+        {/* Loading indicator */}
+        {isLoading && (
+          <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border-l-4 border-blue-500">
+            <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 text-sm">
+              <span className="animate-pulse">🤖</span>
+              <span>AI Agent 正在分析您的需求...</span>
+            </div>
+          </div>
+        )}
+
+        {/* Error display */}
+        {error && (
+          <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border-l-4 border-red-500">
+            <div className="flex items-center gap-2 text-red-700 dark:text-red-300 text-sm">
+              <span>⚠️</span>
+              <span>{error}</span>
+            </div>
+            {error.includes('API key') && (
+              <p className="text-xs mt-2 text-red-600 dark:text-red-400">
+                获取 API Key：<a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="underline ml-1">Anthropic Console</a>
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Route Display */}
@@ -128,6 +174,7 @@ const RoutePlannerCard = () => {
             <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
               <span className="text-nyu-purple">总步行时间：</span>
               <span className="text-lg font-bold ml-2">{totalTime} 分钟</span>
+              <span className="text-xs ml-2 text-gray-500">({route.length} 个地点)</span>
             </div>
             <button
               onClick={handleClearRoute}
@@ -135,6 +182,14 @@ const RoutePlannerCard = () => {
             >
               清空路线
             </button>
+          </div>
+
+          {/* AI Planning Badge */}
+          <div className="mb-4 p-3 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 rounded-lg">
+            <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <span>✨</span>
+              <span className="font-medium">AI 已为您规划最佳路线</span>
+            </div>
           </div>
 
           <div className="space-y-3">
@@ -208,16 +263,18 @@ const RoutePlannerCard = () => {
       )}
 
       {/* Example prompts */}
-      {route.length === 0 && (
+      {route.length === 0 && !isLoading && (
         <div className="mt-4 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
           <p className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
-            💡 试试这些示例：
+            💡 试试这些智能语义示例：
           </p>
           <div className="space-y-1">
             {[
-              '我想先去喝咖啡，然后去 DUMBO 逛逛，最后回 Tandon',
-              '去 Brooklyn Bridge Park 散步，然后回学校',
-              '吃披萨，然后去 Brooklyn Bridge'
+              '我想去一个适合看夕阳的地方然后回学校',
+              '找个地方吃午饭，最好是意大利菜',
+              '我想放松一下，散散步看看风景',
+              '去个有艺术气息的地方逛逛',
+              '喝杯咖啡提提神，然后去最近的景点'
             ].map((example, i) => (
               <button
                 key={i}
